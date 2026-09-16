@@ -7,13 +7,11 @@ const PROMPT_PREFIX = `You are reviewing an automated forex "liquidity sweep rev
 3. Give a one-line verdict: LOOKS VALID, BORDERLINE, or LOOKS WEAK.
 Keep your whole reply under 80 words. This is not financial advice and you are not placing any trade — you are only annotating an alert for a human to review themselves.`;
 
-// Uses Google's Interactions API (the current recommended Gemini API as of
-// mid-2026 — the older generateContent endpoint still works but this is
-// what Google's own docs point new integrations to). See:
-// https://ai.google.dev/gemini-api/docs/interactions-overview
-// https://ai.google.dev/gemini-api/docs/image-understanding
-export async function reviewSignalWithGemini(chartPng: Buffer, signal: LiquiditySignal): Promise<string> {
+const AGENTROUTER_BASE_URL = 'https://agentrouter.org/v1/chat/completions';
+
+export async function reviewSignalWithGpt6(chartPng: Buffer, signal: LiquiditySignal): Promise<string> {
   const base64Image = chartPng.toString('base64');
+  const dataUrl = `data:image/png;base64,${base64Image}`;
 
   const signalSummary = `Symbol: ${signal.symbol}
 Direction: ${signal.direction}
@@ -22,41 +20,29 @@ Entry: ${signal.entryPrice}
 Stop-loss: ${signal.stopLoss}
 Target: ${signal.takeProfit}`;
 
-  const res = await fetch('https://generativelanguage.googleapis.com/v1beta/interactions', {
+  const res = await fetch(AGENTROUTER_BASE_URL, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'x-goog-api-key': config.GEMINI_API_KEY
+      Authorization: `Bearer ${config.OPENAI_API_KEY}`
     },
     body: JSON.stringify({
-      model: 'gemini-3.8-flash',
-      input: [
-        { type: 'text', text: PROMPT_PREFIX + '\n\n' + signalSummary },
-        { type: 'image', data: base64Image, mime_type: 'image/png' }
+      model: 'gpt-6-astra',
+      messages: [
+        {
+          role: 'user',
+          content: [
+            { type: 'text', text: PROMPT_PREFIX + '\n\n' + signalSummary },
+            { type: 'image_url', image_url: { url: dataUrl } }
+          ]
+        }
       ]
     })
   });
 
   if (!res.ok) {
-    throw new Error(`Gemini API failed: ${res.status} ${await res.text()}`);
+    throw new Error(`AgentRouter/GPT-6 API failed: ${res.status} ${await res.text()}`);
   }
-  const data = (await res.json()) as Record<string, unknown>;
-
-  // Defensive parsing: the Interactions API's official SDKs expose a
-  // convenience `output_text` field. We read it directly from the REST
-  // response first; if Google's raw JSON shape differs from the SDK
-  // convenience field, fall back to walking the `output` steps array
-  // rather than crashing, and log the raw shape once so it can be fixed.
-  if (typeof data.output_text === 'string') return data.output_text;
-
-  const output = data.output as { content?: { type: string; text?: string }[] }[] | undefined;
-  if (Array.isArray(output)) {
-    for (const step of output) {
-      const textPart = step.content?.find((c) => c.type === 'text')?.text;
-      if (textPart) return textPart;
-    }
-  }
-
-  console.error('[ai-agent] unrecognized Gemini response shape:', JSON.stringify(data).slice(0, 500));
-  return '(Gemini did not return a recognizable text review)';
+  const data = (await res.json()) as { choices: { message: { content: string } }[] };
+  return data.choices?.[0]?.message?.content ?? '(GPT-6 did not return a text review)';
 }
