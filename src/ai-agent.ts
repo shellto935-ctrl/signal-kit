@@ -7,6 +7,14 @@ const PROMPT_PREFIX = `You are reviewing an automated forex "liquidity sweep rev
 3. Give a one-line verdict: LOOKS VALID, BORDERLINE, or LOOKS WEAK.
 Keep your whole reply under 80 words. This is not financial advice and you are not placing any trade — you are only annotating an alert for a human to review themselves.`;
 
+// Uses OpenAI's Chat Completions API SHAPE, but routed through AgentRouter
+// (agentrouter.org) — a third-party proxy that forwards to OpenAI/Anthropic/
+// others using an OpenAI-compatible endpoint. NOTE: AgentRouter's own docs
+// describe it as better suited to testing/prototyping than to production
+// services that need guaranteed uptime — worth keeping in mind for a bot
+// meant to run continuously. Model id: gpt-6-astra (verify it's still listed
+// in your AgentRouter console — https://agentrouter.org/console — as
+// available models can change).
 const AGENTROUTER_BASE_URL = 'https://agentrouter.org/v1/chat/completions';
 
 export async function reviewSignalWithGpt6(chartPng: Buffer, signal: LiquiditySignal): Promise<string> {

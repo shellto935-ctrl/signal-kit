@@ -4,7 +4,7 @@ import { runLiquidityStrategy } from './strategy.js';
 import { formatSignalMessage } from './format.js';
 import { sendTelegramMessage, sendTelegramPhoto } from './telegram.js';
 import { buildSignalChartPng } from './chart.js';
-import { reviewSignalWithGemini } from './ai-agent.js';
+import { reviewSignalWithGpt6 } from './ai-agent.js';
 
 const SYMBOLS = ['EUR/USD', 'GBP/USD', 'XAU/USD'];
 const POLL_INTERVAL_MS = 15 * 60 * 1000;
@@ -44,8 +44,8 @@ async function pollOnce() {
           if (config.AI_AGENT_ENABLED) {
             try {
               const chartPng = await buildSignalChartPng(entryCandles, signal);
-              const review = await reviewSignalWithGemini(chartPng, signal);
-              const combined = `${baseMessage}\n\n🤖 *Gemini-এর review:*\n${review}`;
+              const review = await reviewSignalWithGpt6(chartPng, signal);
+              const combined = `${baseMessage}\n\n🤖 *GPT-6-এর review:*\n${review}`;
               await sendTelegramPhoto(chartPng, combined);
             } catch (err) {
               console.error(`[poller] AI review failed for ${symbol}, sending plain alert instead:`, err);
