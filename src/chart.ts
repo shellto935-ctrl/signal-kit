@@ -44,7 +44,18 @@ export async function buildSignalChartPng(entryCandles: Candle[], signal: Liquid
   const res = await fetch('https://quickchart.io/chart', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ chart: chartConfig, width: 800, height: 500, backgroundColor: 'white', format: 'png' })
+    body: JSON.stringify({
+      chart: chartConfig,
+      width: 800,
+      height: 500,
+      backgroundColor: 'white',
+      format: 'png',
+      // Candlestick charts need chartjs-chart-financial, which QuickChart
+      // only loads for Chart.js v3+ — omitting this was the cause of the
+      // "400" errors seen in production (QuickChart doesn't recognize the
+      // 'candlestick' type on its default older Chart.js version).
+      version: '3'
+    })
   });
   if (!res.ok) {
     throw new Error(`QuickChart failed: ${res.status} ${await res.text()}`);

@@ -1,11 +1,17 @@
 import { config } from './config.js';
 import type { LiquiditySignal } from './types.js';
 
-const PROMPT_PREFIX = `You are reviewing an automated forex "liquidity sweep reversal" trade alert before it is shown to a retail trader. You are given a candlestick chart image and the alert's computed levels. Look at the chart and:
-1. Confirm or dispute whether the chart visually shows a genuine liquidity sweep (wick beyond a prior swing level, close back inside) followed by a real reversal reaction — not just noise.
-2. Note anything concerning (e.g. the reaction candle looks weak, price is in a strong opposing trend, the target level looks too far/close).
-3. Give a one-line verdict: LOOKS VALID, BORDERLINE, or LOOKS WEAK.
-Keep your whole reply under 80 words. This is not financial advice and you are not placing any trade — you are only annotating an alert for a human to review themselves.`;
+const PROMPT_PREFIX = `You are an experienced ICT/Smart-Money-Concepts trader reviewing an automated "liquidity sweep reversal" alert before it reaches a retail trader. You are given a candlestick chart image and the alert's computed levels.
+
+Think like a trader who reads liquidity, not like a pattern-matching script. Walk through this specific reasoning on the chart image:
+
+1. RETAIL POSITIONING: Looking at the visible structure (the swing highs/lows, any obvious support/resistance or round numbers on the chart), where would typical retail traders likely be entering right now — buying dips at "support," selling at "resistance," or chasing the breakout candle? Name the approximate price area.
+2. RETAIL STOPS: Given that retail entry, where would their stop-losses most likely cluster (just beyond the nearest swing point, a fixed pip amount, etc.)? That cluster is where resting liquidity sits.
+3. SWEEP CHECK: Does the chart show price actually wick through that liquidity cluster and close back inside — a genuine stop-hunt — or does it look like a clean breakout/continuation (which would make this alert's reversal premise weak)?
+4. BETTER ENTRY: Independent of the alert's own entry price, if you were trading this setup yourself, is there a price level that would give a better risk:reward than the alert's entry (e.g. waiting for a deeper retest, or an area retail hasn't been swept from yet)? Say so in one line, or say the given entry already looks reasonable.
+5. VERDICT: One line — LOOKS VALID, BORDERLINE, or LOOKS WEAK.
+
+Keep the whole reply under 130 words, structured with short labels for each of the 5 points above. This is analysis for a human to read and decide for themselves — you are not placing a trade, and nothing you say here automatically changes the alert's entry, stop-loss, or target.`;
 
 // Uses OpenAI's Chat Completions API SHAPE, but routed through AgentRouter
 // (agentrouter.org) — a third-party proxy that forwards to OpenAI/Anthropic/
