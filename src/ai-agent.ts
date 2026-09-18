@@ -13,19 +13,13 @@ Think like a trader who reads liquidity, not like a pattern-matching script. Wal
 
 Keep the whole reply under 130 words, structured with short labels for each of the 5 points above. This is analysis for a human to read and decide for themselves — you are not placing a trade, and nothing you say here automatically changes the alert's entry, stop-loss, or target.`;
 
-// Uses OpenAI's Chat Completions API SHAPE, but routed through AgentRouter
-// (agentrouter.org) — a third-party proxy that forwards to OpenAI/Anthropic/
-// others using an OpenAI-compatible endpoint. NOTE: AgentRouter's own docs
-// describe it as better suited to testing/prototyping than to production
-// services that need guaranteed uptime — worth keeping in mind for a bot
-// meant to run continuously. Model id: gpt-6-astra (verify it's still listed
-// in your AgentRouter console — https://agentrouter.org/console — as
-// available models can change).
-const AGENTROUTER_BASE_URL = 'https://agentrouter.org/v1/chat/completions';
-
-export async function reviewSignalWithGpt6(chartPng: Buffer, signal: LiquiditySignal): Promise<string> {
+// Uses Google's Interactions API (the current recommended Gemini API as of
+// mid-2026 — the older generateContent endpoint still works but this is
+// what Google's own docs point new integrations to). See:
+// https://ai.google.dev/gemini-api/docs/interactions-overview
+// https://ai.google.dev/gemini-api/docs/image-understanding
+export async function reviewSignalWithGemini(chartPng: Buffer, signal: LiquiditySignal): Promise<string> {
   const base64Image = chartPng.toString('base64');
-  const dataUrl = `data:image/png;base64,${base64Image}`;
 
   const signalSummary = `Symbol: ${signal.symbol}
 Direction: ${signal.direction}
@@ -34,29 +28,36 @@ Entry: ${signal.entryPrice}
 Stop-loss: ${signal.stopLoss}
 Target: ${signal.takeProfit}`;
 
-  const res = await fetch(AGENTROUTER_BASE_URL, {
+  const res = await fetch('https://generativelanguage.googleapis.com/v1beta/interactions', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      Authorization: `Bearer ${config.OPENAI_API_KEY}`
+      'x-goog-api-key': config.GEMINI_API_KEY
     },
     body: JSON.stringify({
-      model: 'gpt-6-astra',
-      messages: [
-        {
-          role: 'user',
-          content: [
-            { type: 'text', text: PROMPT_PREFIX + '\n\n' + signalSummary },
-            { type: 'image_url', image_url: { url: dataUrl } }
-          ]
-        }
+      model: 'gemini-3.8-flash',
+      input: [
+        { type: 'text', text: PROMPT_PREFIX + '\n\n' + signalSummary },
+        { type: 'image', data: base64Image, mime_type: 'image/png' }
       ]
     })
   });
 
   if (!res.ok) {
-    throw new Error(`AgentRouter/GPT-6 API failed: ${res.status} ${await res.text()}`);
+    throw new Error(`Gemini API failed: ${res.status} ${await res.text()}`);
   }
-  const data = (await res.json()) as { choices: { message: { content: string } }[] };
-  return data.choices?.[0]?.message?.content ?? '(GPT-6 did not return a text review)';
+  const data = (await res.json()) as Record<string, unknown>;
+
+  if (typeof data.output_text === 'string') return data.output_text;
+
+  const output = data.output as { content?: { type: string; text?: string }[] }[] | undefined;
+  if (Array.isArray(output)) {
+    for (const step of output) {
+      const textPart = step.content?.find((c) => c.type === 'text')?.text;
+      if (textPart) return textPart;
+    }
+  }
+
+  console.error('[ai-agent] unrecognized Gemini response shape:', JSON.stringify(data).slice(0, 500));
+  return '(Gemini did not return a recognizable text review)';
 }
