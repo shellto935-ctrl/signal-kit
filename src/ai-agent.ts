@@ -61,3 +61,45 @@ Target: ${signal.takeProfit}`;
   console.error('[ai-agent] unrecognized Gemini response shape:', JSON.stringify(data).slice(0, 500));
   return '(Gemini did not return a recognizable text review)';
 }
+
+// Uses BlueMinds (api.bluesminds.com) — another free-credit third-party
+// router, OpenAI-compatible endpoint. NOTE: unlike AgentRouter, BlueMinds
+// has no public documentation or verified provenance — treat this as an
+// experiment, not something to depend on for a live bot.
+export async function reviewSignalWithGpt6BlueMinds(chartPng: Buffer, signal: LiquiditySignal): Promise<string> {
+  const base64Image = chartPng.toString('base64');
+  const dataUrl = `data:image/png;base64,${base64Image}`;
+
+  const signalSummary = `Symbol: ${signal.symbol}
+Direction: ${signal.direction}
+Swept level: ${signal.sweptSwing.kind} at ${signal.sweptSwing.price}
+Entry: ${signal.entryPrice}
+Stop-loss: ${signal.stopLoss}
+Target: ${signal.takeProfit}`;
+
+  const res = await fetch('https://api.bluesminds.com/v1/chat/completions', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${config.OPENAI_API_KEY}`
+    },
+    body: JSON.stringify({
+      model: 'gpt-6-astra',
+      messages: [
+        {
+          role: 'user',
+          content: [
+            { type: 'text', text: PROMPT_PREFIX + '\n\n' + signalSummary },
+            { type: 'image_url', image_url: { url: dataUrl } }
+          ]
+        }
+      ]
+    })
+  });
+
+  if (!res.ok) {
+    throw new Error(`BlueMinds/GPT-6 API failed: ${res.status} ${await res.text()}`);
+  }
+  const data = (await res.json()) as { choices: { message: { content: string } }[] };
+  return data.choices?.[0]?.message?.content ?? '(GPT-6 did not return a text review)';
+}
