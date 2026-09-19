@@ -24,4 +24,12 @@ describe('formatSignalMessage', () => {
     expect(msg).toContain('1.10000');
     expect(msg).toContain('অটোমেটিক ট্রেড হয়নি');
   });
+
+  it('formats gold (XAU/USD) prices with 2 decimals, not 5', () => {
+    const goldSignal: LiquiditySignal = { ...signal, symbol: 'XAU/USD', entryPrice: 4343.96711, stopLoss: 4341.25904, takeProfit: 4348.55869 };
+    const msg = formatSignalMessage(goldSignal);
+    expect(msg).toContain('4343.97');
+    expect(msg).toContain('4341.26');
+    expect(msg).not.toContain('4343.96711');
+  });
 });

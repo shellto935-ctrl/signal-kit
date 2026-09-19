@@ -28,6 +28,6 @@ export function assertLiveConfig() {
     required('TELEGRAM_CHAT_ID');
   }
   if (config.AI_AGENT_ENABLED) {
-    required('OPENAI_API_KEY');
+    required('GEMINI_API_KEY');
   }
 }

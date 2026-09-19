@@ -4,7 +4,7 @@ import { runLiquidityStrategy } from './strategy.js';
 import { formatSignalMessage } from './format.js';
 import { sendTelegramMessage, sendTelegramPhoto } from './telegram.js';
 import { buildSignalChartPng } from './chart.js';
-import { reviewSignalWithGpt6BlueMinds } from './ai-agent.js';
+import { reviewSignalWithGemini } from './ai-agent.js';
 
 const SYMBOLS = ['EUR/USD', 'GBP/USD', 'XAU/USD'];
 const POLL_INTERVAL_MS = 15 * 60 * 1000;
@@ -41,17 +41,26 @@ async function pollOnce() {
 
           const baseMessage = formatSignalMessage(signal);
 
-          if (config.AI_AGENT_ENABLED) {
-            try {
-              const chartPng = await buildSignalChartPng(entryCandles, signal);
-              const review = await reviewSignalWithGpt6BlueMinds(chartPng, signal);
-              const combined = `${baseMessage}\n\n🤖 *GPT-6 (BlueMinds)-এর liquidity analysis:*\n${review}`;
-              await sendTelegramPhoto(chartPng, combined);
-            } catch (err) {
-              console.error(`[poller] AI review failed for ${symbol}, sending plain alert instead:`, err);
-              await sendTelegramMessage(baseMessage);
+          // Always try to send the chart image — a picture makes the level
+          // instantly readable, whether or not the AI text review succeeds.
+          // Only the AI-review step is optional/best-effort; chart failure
+          // is the sole reason to fall back to a text-only message.
+          try {
+            const chartPng = await buildSignalChartPng(entryCandles, signal);
+            let caption = baseMessage;
+
+            if (config.AI_AGENT_ENABLED) {
+              try {
+                const review = await reviewSignalWithGemini(chartPng, signal);
+                caption = `${baseMessage}\n\n🤖 *Gemini-এর liquidity analysis:*\n${review}`;
+              } catch (err) {
+                console.error(`[poller] AI review failed for ${symbol}, sending chart without it:`, err);
+              }
             }
-          } else {
+
+            await sendTelegramPhoto(chartPng, caption);
+          } catch (err) {
+            console.error(`[poller] chart build failed for ${symbol}, sending text-only alert:`, err);
             await sendTelegramMessage(baseMessage);
           }
 
