@@ -15,8 +15,13 @@ export async function buildSignalChartPng(entryCandles: Candle[], signal: Liquid
       datasets: [
         {
           label: signal.symbol,
-          data: windowCandles.map((c) => ({
-            x: new Date(c.openTimeMs).toISOString(),
+          data: windowCandles.map((c, i) => ({
+            // Plain numeric index instead of a timestamp/date string: a
+            // 'time' x-scale needs a date adapter to parse values, and if
+            // that silently fails the candlestick controller draws nothing
+            // (which is what happened in production) while unrelated
+            // elements like annotation lines still render fine.
+            x: i,
             o: c.open,
             h: c.high,
             l: c.low,
@@ -28,6 +33,7 @@ export async function buildSignalChartPng(entryCandles: Candle[], signal: Liquid
     options: {
       plugins: {
         title: { display: true, text: `${signal.symbol} — liquidity sweep signal` },
+        legend: { display: false },
         annotation: {
           annotations: {
             entry: hLine(signal.entryPrice, 'Entry', '#2e7d32'),
@@ -37,7 +43,9 @@ export async function buildSignalChartPng(entryCandles: Candle[], signal: Liquid
           }
         }
       },
-      scales: { x: { type: 'time' } }
+      scales: {
+        x: { type: 'linear', ticks: { display: false }, title: { display: true, text: 'recent candles →' } }
+      }
     }
   };
 
@@ -50,10 +58,6 @@ export async function buildSignalChartPng(entryCandles: Candle[], signal: Liquid
       height: 500,
       backgroundColor: 'white',
       format: 'png',
-      // Candlestick charts need chartjs-chart-financial, which QuickChart
-      // only loads for Chart.js v3+ — omitting this was the cause of the
-      // "400" errors seen in production (QuickChart doesn't recognize the
-      // 'candlestick' type on its default older Chart.js version).
       version: '3'
     })
   });
@@ -61,7 +65,14 @@ export async function buildSignalChartPng(entryCandles: Candle[], signal: Liquid
     throw new Error(`QuickChart failed: ${res.status} ${await res.text()}`);
   }
   const arrayBuffer = await res.arrayBuffer();
-  return Buffer.from(arrayBuffer);
+  const buf = Buffer.from(arrayBuffer);
+  if (buf.length < 500) {
+    // A valid PNG chart is always much larger than this; a tiny buffer
+    // usually means QuickChart returned an error image instead of a real
+    // chart. Fail loudly here rather than silently sending a blank photo.
+    throw new Error(`QuickChart returned a suspiciously small image (${buf.length} bytes) — likely a render error, not a real chart.`);
+  }
+  return buf;
 }
 
 function hLine(value: number, label: string, color: string) {
