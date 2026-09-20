@@ -9,7 +9,8 @@ const signal: LiquiditySignal = {
   entryPrice: 1.0860,
   stopLoss: 1.0828,
   takeProfit: 1.1000,
-  sweptSwing: { kind: 'LOW', price: 1.085, candleIndex: 3, openTimeMs: 0, respected: true },
+  sweptSwing: { kind: 'LOW', price: 1.085, candleIndex: 3, openTimeMs: 0, respected: true, touches: 1, engineered: false },
+  targetSwing: { kind: 'HIGH', price: 1.1000, candleIndex: 9, openTimeMs: 100, respected: true, touches: 3, engineered: true },
   reactionCandleIndex: 1,
   createdAtMs: Date.now()
 };
@@ -23,6 +24,7 @@ describe('formatSignalMessage', () => {
     expect(msg).toContain('1.08280');
     expect(msg).toContain('1.10000');
     expect(msg).toContain('অটোমেটিক ট্রেড হয়নি');
+    expect(msg).toContain('3 বার respected');
   });
 
   it('formats gold (XAU/USD) prices with 2 decimals, not 5', () => {

@@ -11,15 +11,19 @@ function m15(o: number, h: number, l: number, cl: number, i: number): Candle {
 
 describe('runLiquidityStrategy', () => {
   it('produces a BUY ENTRY_READY signal after a low sweep + bullish reaction, targeting the prior high', () => {
-    // 4H structure: a swing LOW at 1.0850 (index 3) and a swing HIGH at 1.1000 (index 6, above the low, ahead of it)
+    // 4H structure: a swing LOW at 1.0850 (index 3) and a swing HIGH at 1.1000 (index 6).
+    // Index 1's high (1.0997) is a prior, non-pivot approach to that same
+    // 1.1000 level — this is what makes the eventual high "engineered"
+    // (touched 2+ times) rather than a one-off pivot, which the strategy
+    // now requires before it will use a level as a target.
     const structureCandles = [
       h4(1.090, 1.087, 0),
-      h4(1.089, 1.086, 1),
+      h4(1.0997, 1.086, 1), // prior touch of the ~1.1000 level, respected (closes well below it)
       h4(1.088, 1.086, 2),
       h4(1.087, 1.085, 3), // swing LOW 1.0850
       h4(1.089, 1.086, 4),
       h4(1.091, 1.088, 5),
-      h4(1.100, 1.095, 6), // swing HIGH 1.1000
+      h4(1.100, 1.095, 6), // swing HIGH 1.1000 (now engineered: 2 touches)
       h4(1.098, 1.096, 7),
       h4(1.097, 1.095, 8),
       h4(1.096, 1.094, 9)

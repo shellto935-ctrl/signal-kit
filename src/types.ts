@@ -16,6 +16,15 @@ export interface SwingPoint {
   openTimeMs: number;
   /** True once later price has moved away without re-testing it (i.e. "respected"). */
   respected: boolean;
+  /**
+   * How many separate times price approached this level (within tolerance)
+   * without closing through it, counting the pivot's own formation as one.
+   * Marco Trades' "Da Vinci model" calls a level with 2+ touches "engineered
+   * liquidity" — repeated respect is what marks it as a real liquidity pool
+   * worth targeting, versus a one-off pivot that could be noise.
+   */
+  touches: number;
+  engineered: boolean;
 }
 
 /** A detected sweep of a swing point on the entry timeframe. */
@@ -35,6 +44,7 @@ export interface LiquiditySignal {
   stopLoss: number;
   takeProfit: number;
   sweptSwing: SwingPoint;
+  targetSwing: SwingPoint;
   reactionCandleIndex: number;
   createdAtMs: number;
 }

@@ -38,7 +38,8 @@ function buildSampleSignal(): { entryCandles: Candle[]; signal: LiquiditySignal 
     entryPrice: 1.0860,
     stopLoss: 1.0826,
     takeProfit: 1.1000,
-    sweptSwing: { kind: 'LOW', price: 1.0830, candleIndex: 27, openTimeMs: entryCandles[27].openTimeMs, respected: true },
+    sweptSwing: { kind: 'LOW', price: 1.0830, candleIndex: 27, openTimeMs: entryCandles[27].openTimeMs, respected: true, touches: 2, engineered: true },
+    targetSwing: { kind: 'HIGH', price: 1.1000, candleIndex: 5, openTimeMs: now - 5 * step, respected: true, touches: 2, engineered: true },
     reactionCandleIndex: 28,
     createdAtMs: now
   };

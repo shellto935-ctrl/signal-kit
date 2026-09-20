@@ -33,7 +33,7 @@ export function formatSignalMessage(signal: LiquiditySignal): string {
     ``,
     `🎯 *Entry:* ${fp(signal.entryPrice)}`,
     `🛑 *Stop-loss:* ${fp(signal.stopLoss)}`,
-    `🏁 *Projected/Target price:* ${fp(signal.takeProfit)}`,
+    `🏁 *Projected/Target price:* ${fp(signal.takeProfit)} _(এই লেভেল আগে ${signal.targetSwing.touches} বার respected হয়েছে)_`,
     `⚖️ *Risk:Reward:* 1:${rr}`,
     ``,
     `⚠️ এখনই চার্ট দেখুন! কোনো অটোমেটিক ট্রেড হয়নি — এটা শুধু একটা অ্যালার্ট।`
