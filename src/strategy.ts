@@ -4,6 +4,7 @@ import { findSweep } from './sweep.js';
 import { findReaction } from './reaction.js';
 
 const STOP_BUFFER = 0.0002; // ~2 pips buffer beyond the sweep extreme, on top of the wick itself
+const MIN_RISK_REWARD = 1.5; // reject setups where the nearest engineered target barely clears the entry
 
 export interface StrategyInput {
   symbol: string;
@@ -53,7 +54,12 @@ export function runLiquidityStrategy(input: StrategyInput): LiquiditySignal | nu
       direction === 'UP' ? sweepEvent.sweepExtreme - STOP_BUFFER : sweepEvent.sweepExtreme + STOP_BUFFER;
 
     const oppositeKind = swing.kind === 'HIGH' ? 'LOW' : 'HIGH';
-    const target = pickNearestOppositeTarget(swings, oppositeKind, entryPrice, direction);
+    // Try engineered targets nearest-first, but skip any that would give a
+    // poor risk:reward (this is the bug behind the 1:0.07 signal seen in
+    // production — the nearest engineered level was barely past entry).
+    const targets = pickOppositeTargets(swings, oppositeKind, entryPrice, direction);
+    const riskDistance = Math.abs(entryPrice - stopLoss);
+    const target = selectTargetByMinRR(targets, entryPrice, riskDistance);
     if (!target) continue;
 
     return {
@@ -77,18 +83,31 @@ export function runLiquidityStrategy(input: StrategyInput): LiquiditySignal | nu
  * Only considers "engineered liquidity" targets — swing points that price
  * has approached and respected more than once, per the Da Vinci model's
  * core requirement. Targeting a one-off pivot isn't this model; it's just
- * noise that happens to look like a swing point.
+ * noise that happens to look like a swing point. Returns candidates
+ * nearest-first so the caller can walk outward until one clears the
+ * minimum risk:reward.
  */
-function pickNearestOppositeTarget(
+function pickOppositeTargets(
   swings: SwingPoint[],
   oppositeKind: 'HIGH' | 'LOW',
   fromPrice: number,
   direction: 'UP' | 'DOWN'
-): SwingPoint | undefined {
+): SwingPoint[] {
   const pool = swings.filter((s) => s.kind === oppositeKind && s.engineered);
   if (direction === 'UP') {
-    // Target the nearest opposite-side liquidity ABOVE the entry price.
-    return pool.filter((s) => s.price > fromPrice).sort((a, b) => a.price - b.price)[0];
+    // Nearest opposite-side liquidity ABOVE the entry price, closest first.
+    return pool.filter((s) => s.price > fromPrice).sort((a, b) => a.price - b.price);
   }
-  return pool.filter((s) => s.price < fromPrice).sort((a, b) => b.price - a.price)[0];
+  return pool.filter((s) => s.price < fromPrice).sort((a, b) => b.price - a.price);
+}
+
+/**
+ * Picks the first (nearest) target whose reward:risk clears MIN_RISK_REWARD.
+ * Exported standalone so this specific decision — the actual fix for the
+ * 1:0.07 signal bug — can be unit-tested directly with plain numbers,
+ * instead of only indirectly through hand-built candle fixtures.
+ */
+export function selectTargetByMinRR(targets: SwingPoint[], entryPrice: number, riskDistance: number): SwingPoint | undefined {
+  if (riskDistance <= 0) return undefined;
+  return targets.find((t) => Math.abs(t.price - entryPrice) / riskDistance >= MIN_RISK_REWARD);
 }

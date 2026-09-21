@@ -7,7 +7,21 @@ import type { Candle, LiquiditySignal } from './types.js';
  * hit one build problem this project; not repeating that pattern here).
  */
 export async function buildSignalChartPng(entryCandles: Candle[], signal: LiquiditySignal): Promise<Buffer> {
-  const windowCandles = entryCandles.slice(-40);
+  // Fewer, bigger candles read far more clearly on a phone screen than a
+  // dense 40-candle strip — this was part of what made the first version
+  // hard to read even after candles started rendering at all.
+  const windowCandles = entryCandles.slice(-25);
+
+  // Explicitly pad the y-axis to cover both the candles AND the signal
+  // levels (entry/stop/target/swept). Without this, a target that's far
+  // outside the visible candle range can end up clipped or the chart can
+  // auto-scale so tightly the lines are hard to read.
+  const candleLows = windowCandles.map((c) => c.low);
+  const candleHighs = windowCandles.map((c) => c.high);
+  const levels = [signal.entryPrice, signal.stopLoss, signal.takeProfit, signal.sweptSwing.price];
+  const yMin = Math.min(...candleLows, ...levels);
+  const yMax = Math.max(...candleHighs, ...levels);
+  const pad = (yMax - yMin) * 0.08;
 
   const chartConfig = {
     type: 'candlestick',
@@ -15,6 +29,8 @@ export async function buildSignalChartPng(entryCandles: Candle[], signal: Liquid
       datasets: [
         {
           label: signal.symbol,
+          barPercentage: 0.7,
+          categoryPercentage: 0.9,
           data: windowCandles.map((c, i) => ({
             // Plain numeric index instead of a timestamp/date string: a
             // 'time' x-scale needs a date adapter to parse values, and if
@@ -32,7 +48,7 @@ export async function buildSignalChartPng(entryCandles: Candle[], signal: Liquid
     },
     options: {
       plugins: {
-        title: { display: true, text: `${signal.symbol} — liquidity sweep signal` },
+        title: { display: true, text: `${signal.symbol} — liquidity sweep signal`, font: { size: 18 } },
         legend: { display: false },
         annotation: {
           annotations: {
@@ -44,7 +60,8 @@ export async function buildSignalChartPng(entryCandles: Candle[], signal: Liquid
         }
       },
       scales: {
-        x: { type: 'linear', ticks: { display: false }, title: { display: true, text: 'recent candles →' } }
+        x: { type: 'linear', ticks: { display: false }, title: { display: true, text: 'recent candles →' } },
+        y: { min: yMin - pad, max: yMax + pad }
       }
     }
   };
@@ -54,8 +71,8 @@ export async function buildSignalChartPng(entryCandles: Candle[], signal: Liquid
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       chart: chartConfig,
-      width: 800,
-      height: 500,
+      width: 900,
+      height: 560,
       backgroundColor: 'white',
       format: 'png',
       version: '3'

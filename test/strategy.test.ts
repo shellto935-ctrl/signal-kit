@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { runLiquidityStrategy } from '../src/strategy.js';
-import type { Candle } from '../src/types.js';
+import { runLiquidityStrategy, selectTargetByMinRR } from '../src/strategy.js';
+import type { Candle, SwingPoint } from '../src/types.js';
 
 function h4(h: number, l: number, i: number): Candle {
   return { openTimeMs: i * 4 * 60 * 60 * 1000, open: (h + l) / 2, high: h, low: l, close: (h + l) / 2 };
@@ -54,5 +54,45 @@ describe('runLiquidityStrategy', () => {
     const entryCandles = [m15(1.086, 1.0865, 1.0855, 1.086, 0)];
     const signal = runLiquidityStrategy({ symbol: 'EUR/USD', structureCandles, entryCandles, nowMs: Date.now() });
     expect(signal).toBeNull();
+  });
+});
+
+describe('selectTargetByMinRR (the direct fix for the 1:0.07 signal bug)', () => {
+  const makeSwing = (price: number): SwingPoint => ({
+    kind: 'HIGH',
+    price,
+    candleIndex: 0,
+    openTimeMs: 0,
+    respected: true,
+    touches: 2,
+    engineered: true
+  });
+
+  it('rejects a target that is nearest but gives poor risk:reward', () => {
+    const entryPrice = 4380.01;
+    const stopLoss = 4380.48; // riskDistance = 0.47
+    const riskDistance = Math.abs(entryPrice - stopLoss);
+    const nearBadTarget = makeSwing(4380.08); // reward 0.07 -> R:R 0.15, must be rejected
+    const target = selectTargetByMinRR([nearBadTarget], entryPrice, riskDistance);
+    expect(target).toBeUndefined();
+  });
+
+  it('walks past a too-close target to a farther one that clears the minimum R:R', () => {
+    const entryPrice = 1.0860;
+    const stopLoss = 1.0826; // riskDistance ≈ 0.0034
+    const riskDistance = Math.abs(entryPrice - stopLoss);
+    const tooClose = makeSwing(1.0862); // R:R ≈ 0.06 -> rejected
+    const goodFarther = makeSwing(1.1000); // R:R ≈ 4.1 -> accepted
+    const target = selectTargetByMinRR([tooClose, goodFarther], entryPrice, riskDistance);
+    expect(target?.price).toBe(1.1000);
+  });
+
+  it('accepts a target that clearly clears the minimum risk:reward threshold', () => {
+    const entryPrice = 1.0000;
+    const stopLoss = 0.9900; // riskDistance = 0.01
+    const riskDistance = Math.abs(entryPrice - stopLoss);
+    const wellAboveMin = makeSwing(1.0200); // reward 0.02 -> R:R = 2.0, comfortably above 1.5
+    const target = selectTargetByMinRR([wellAboveMin], entryPrice, riskDistance);
+    expect(target?.price).toBe(1.0200);
   });
 });
