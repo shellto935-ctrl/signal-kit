@@ -45,6 +45,7 @@ export interface LiquiditySignal {
   takeProfit: number;
   sweptSwing: SwingPoint;
   targetSwing: SwingPoint;
+  sweepCandleIndex: number; // index into the entry-timeframe candle array used for the chart
   reactionCandleIndex: number;
   createdAtMs: number;
 }

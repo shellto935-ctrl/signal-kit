@@ -71,6 +71,7 @@ export function runLiquidityStrategy(input: StrategyInput): LiquiditySignal | nu
       takeProfit: target.price,
       targetSwing: target,
       sweptSwing: swing,
+      sweepCandleIndex: sweepEvent.sweepCandleIndex,
       reactionCandleIndex: reactionIdx,
       createdAtMs: nowMs
     };

@@ -6,44 +6,56 @@ import { buildSignalChartPng } from './chart.js';
 import { formatSignalMessage } from './format.js';
 import { sendTelegramPhoto } from './telegram.js';
 import { reviewSignalWithGemini } from './ai-agent.js';
+import { fetchCandles } from './market/twelvedata.js';
+import { runLiquidityStrategy } from './strategy.js';
 import type { Candle, LiquiditySignal } from './types.js';
 
 assertLiveConfig();
 
-/** Builds a plausible-looking synthetic EUR/USD candle series + signal so
- * /test-alert can preview the exact real message format (chart + caption)
- * without waiting for a genuine market setup. */
-function buildSampleSignal(): { entryCandles: Candle[]; signal: LiquiditySignal } {
-  const now = Date.now();
-  const step = 15 * 60 * 1000;
-  const base = 1.0860;
-  const entryCandles: Candle[] = [];
-  for (let i = 0; i < 30; i++) {
-    const drift = Math.sin(i / 4) * 0.0015;
-    const o = base + drift;
-    const c = o + (Math.random() - 0.5) * 0.0006;
-    const h = Math.max(o, c) + Math.random() * 0.0004;
-    const l = Math.min(o, c) - Math.random() * 0.0004;
-    entryCandles.push({ openTimeMs: now - (30 - i) * step, open: o, high: h, low: l, close: c });
+/**
+ * Fetches REAL, current EUR/USD candles and runs the actual strategy on
+ * them for /test-alert, instead of synthetic fake data — so the preview
+ * shows genuine market structure (and looks different each time you call
+ * it) rather than the same canned shape every time.
+ *
+ * If no real setup exists right now (the common case — the whole point of
+ * this strategy is that it's selective), an illustrative entry/stop/target
+ * is layered onto the SAME real candles so the chart and its story are
+ * still consistent, but clearly labeled as illustrative rather than a
+ * genuine detected signal.
+ */
+async function buildPreviewSignal(): Promise<{ entryCandles: Candle[]; signal: LiquiditySignal; isReal: boolean }> {
+  const structureCandles = await fetchCandles(config.TWELVEDATA_API_KEY, 'EUR/USD', '4h', 80);
+  const entryCandles = await fetchCandles(config.TWELVEDATA_API_KEY, 'EUR/USD', '15min', 60);
+
+  const real = runLiquidityStrategy({ symbol: 'EUR/USD', structureCandles, entryCandles, nowMs: Date.now() });
+  if (real) {
+    return { entryCandles, signal: real, isReal: true };
   }
-  // Force the last few candles into an obvious sweep + bullish reaction shape.
-  entryCandles[27] = { openTimeMs: entryCandles[27].openTimeMs, open: 1.0845, high: 1.0847, low: 1.0828, close: 1.0844 };
-  entryCandles[28] = { openTimeMs: entryCandles[28].openTimeMs, open: 1.0844, high: 1.0862, low: 1.0840, close: 1.0860 };
-  entryCandles[29] = { openTimeMs: entryCandles[29].openTimeMs, open: 1.0860, high: 1.0868, low: 1.0858, close: 1.0865 };
+
+  // No genuine setup right now — build an illustrative one from the same
+  // real candles: last close as "entry", recent real high/low as target/stop.
+  const last = entryCandles[entryCandles.length - 1];
+  const recentHigh = Math.max(...entryCandles.slice(-20).map((c) => c.high));
+  const recentLow = Math.min(...entryCandles.slice(-20).map((c) => c.low));
+  const entryPrice = last.close;
+  const stopLoss = recentLow - (recentHigh - recentLow) * 0.1;
+  const takeProfit = recentHigh;
 
   const signal: LiquiditySignal = {
     type: 'ENTRY_READY',
     symbol: 'EUR/USD',
     direction: 'UP',
-    entryPrice: 1.0860,
-    stopLoss: 1.0826,
-    takeProfit: 1.1000,
-    sweptSwing: { kind: 'LOW', price: 1.0830, candleIndex: 27, openTimeMs: entryCandles[27].openTimeMs, respected: true, touches: 2, engineered: true },
-    targetSwing: { kind: 'HIGH', price: 1.1000, candleIndex: 5, openTimeMs: now - 5 * step, respected: true, touches: 2, engineered: true },
-    reactionCandleIndex: 28,
-    createdAtMs: now
+    entryPrice,
+    stopLoss,
+    takeProfit,
+    sweptSwing: { kind: 'LOW', price: recentLow, candleIndex: 0, openTimeMs: last.openTimeMs, respected: true, touches: 1, engineered: false },
+    targetSwing: { kind: 'HIGH', price: recentHigh, candleIndex: 0, openTimeMs: last.openTimeMs, respected: true, touches: 1, engineered: false },
+    sweepCandleIndex: entryCandles.length - 1,
+    reactionCandleIndex: entryCandles.length - 1,
+    createdAtMs: Date.now()
   };
-  return { entryCandles, signal };
+  return { entryCandles, signal, isReal: false };
 }
 
 const server = http.createServer((req, res) => {
@@ -54,17 +66,20 @@ const server = http.createServer((req, res) => {
   }
 
   if (req.url === '/test-alert') {
-    const { entryCandles, signal } = buildSampleSignal();
-    const baseMessage = formatSignalMessage(signal);
-
     (async () => {
       try {
+        const { entryCandles, signal, isReal } = await buildPreviewSignal();
+        const baseMessage = formatSignalMessage(signal);
+        const note = isReal
+          ? '_(এটা বর্তমান বাজারে সত্যিই শনাক্ত হওয়া একটা signal — টেস্ট হিসেবে আগে পাঠানো হলো)_'
+          : '_(এই মুহূর্তে বাজারে কোনো real signal নেই, তাই real চার্টের উপর illustrative entry/stop/target বসানো হয়েছে — শুধু ফরম্যাট দেখার জন্য)_';
+
         const chartPng = await buildSignalChartPng(entryCandles, signal);
-        let caption = baseMessage + '\n\n_(এটা একটা টেস্ট মেসেজ, real market signal না)_';
+        let caption = `${baseMessage}\n\n${note}`;
         if (config.AI_AGENT_ENABLED) {
           try {
             const review = await reviewSignalWithGemini(chartPng, signal);
-            caption = `${baseMessage}\n\n🤖 *Gemini-এর liquidity analysis:*\n${review}\n\n_(এটা একটা টেস্ট মেসেজ, real market signal না)_`;
+            caption = `${baseMessage}\n\n🤖 *Gemini-এর liquidity analysis:*\n${review}\n\n${note}`;
           } catch (err) {
             console.error('[test-alert] AI review failed:', err);
           }

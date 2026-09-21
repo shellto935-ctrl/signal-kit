@@ -5,12 +5,25 @@ import type { Candle, LiquiditySignal } from './types.js';
  * QuickChart.io — a hosted charting API — instead of a native canvas
  * library, to avoid native-dependency build issues on Railway (we already
  * hit one build problem this project; not repeating that pattern here).
+ *
+ * Dark theme (TradingView-style navy/black) and explicit point markers for
+ * ENTRY and the SWEPT candle, not just flat lines, so the picture alone
+ * tells the story: where liquidity was taken, and where to enter.
  */
 export async function buildSignalChartPng(entryCandles: Candle[], signal: LiquiditySignal): Promise<Buffer> {
   // Fewer, bigger candles read far more clearly on a phone screen than a
   // dense 40-candle strip — this was part of what made the first version
   // hard to read even after candles started rendering at all.
-  const windowCandles = entryCandles.slice(-25);
+  const WINDOW = 25;
+  const windowCandles = entryCandles.slice(-WINDOW);
+  // signal.sweepCandleIndex / reactionCandleIndex are indices into the FULL
+  // entryCandles array, not the sliced window — translate them, and simply
+  // omit the point marker (keep the line) if the point fell outside the
+  // visible window.
+  const offset = entryCandles.length - windowCandles.length;
+  const sweepX = signal.sweepCandleIndex - offset;
+  const entryX = signal.reactionCandleIndex - offset;
+  const inWindow = (x: number) => x >= 0 && x < windowCandles.length;
 
   // Explicitly pad the y-axis to cover both the candles AND the signal
   // levels (entry/stop/target/swept). Without this, a target that's far
@@ -23,6 +36,22 @@ export async function buildSignalChartPng(entryCandles: Candle[], signal: Liquid
   const yMax = Math.max(...candleHighs, ...levels);
   const pad = (yMax - yMin) * 0.08;
 
+  const gridColor = '#2a2e39';
+  const textColor = '#d1d4dc';
+
+  const annotations: Record<string, unknown> = {
+    entry: hLine(signal.entryPrice, 'Entry', '#4caf50'),
+    stop: hLine(signal.stopLoss, 'Stop', '#ff5252'),
+    target: hLine(signal.takeProfit, 'Target', '#42a5f5'),
+    swept: hLine(signal.sweptSwing.price, 'Swept level', '#ffb300')
+  };
+  if (inWindow(sweepX)) {
+    annotations.sweepPoint = point(sweepX, signal.sweptSwing.price, '💧 SWEEP', '#ffb300');
+  }
+  if (inWindow(entryX)) {
+    annotations.entryPoint = point(entryX, signal.entryPrice, '🎯 ENTRY HERE', '#4caf50');
+  }
+
   const chartConfig = {
     type: 'candlestick',
     data: {
@@ -31,6 +60,7 @@ export async function buildSignalChartPng(entryCandles: Candle[], signal: Liquid
           label: signal.symbol,
           barPercentage: 0.7,
           categoryPercentage: 0.9,
+          color: { up: '#26a69a', down: '#ef5350', unchanged: '#999999' },
           data: windowCandles.map((c, i) => ({
             // Plain numeric index instead of a timestamp/date string: a
             // 'time' x-scale needs a date adapter to parse values, and if
@@ -48,20 +78,13 @@ export async function buildSignalChartPng(entryCandles: Candle[], signal: Liquid
     },
     options: {
       plugins: {
-        title: { display: true, text: `${signal.symbol} — liquidity sweep signal`, font: { size: 18 } },
+        title: { display: true, text: `${signal.symbol} — liquidity sweep signal (15m)`, color: textColor, font: { size: 18 } },
         legend: { display: false },
-        annotation: {
-          annotations: {
-            entry: hLine(signal.entryPrice, 'Entry', '#2e7d32'),
-            stop: hLine(signal.stopLoss, 'Stop', '#c62828'),
-            target: hLine(signal.takeProfit, 'Target', '#1565c0'),
-            swept: hLine(signal.sweptSwing.price, 'Swept level', '#f9a825')
-          }
-        }
+        annotation: { annotations }
       },
       scales: {
-        x: { type: 'linear', ticks: { display: false }, title: { display: true, text: 'recent candles →' } },
-        y: { min: yMin - pad, max: yMax + pad }
+        x: { type: 'linear', ticks: { display: false }, grid: { color: gridColor }, title: { display: true, text: 'recent 15m candles →', color: textColor } },
+        y: { min: yMin - pad, max: yMax + pad, ticks: { color: textColor }, grid: { color: gridColor } }
       }
     }
   };
@@ -73,7 +96,7 @@ export async function buildSignalChartPng(entryCandles: Candle[], signal: Liquid
       chart: chartConfig,
       width: 900,
       height: 560,
-      backgroundColor: 'white',
+      backgroundColor: '#131722',
       format: 'png',
       version: '3'
     })
@@ -93,5 +116,26 @@ export async function buildSignalChartPng(entryCandles: Candle[], signal: Liquid
 }
 
 function hLine(value: number, label: string, color: string) {
-  return { type: 'line', yMin: value, yMax: value, borderColor: color, borderWidth: 1.5, label: { display: true, content: label, position: 'end' } };
+  return {
+    type: 'line',
+    yMin: value,
+    yMax: value,
+    borderColor: color,
+    borderWidth: 1.5,
+    borderDash: [6, 4],
+    label: { display: true, content: label, position: 'end', backgroundColor: color, color: '#131722', font: { weight: 'bold' } }
+  };
+}
+
+function point(x: number, y: number, label: string, color: string) {
+  return {
+    type: 'point',
+    xValue: x,
+    yValue: y,
+    radius: 6,
+    backgroundColor: color,
+    borderColor: '#131722',
+    borderWidth: 2,
+    label: { display: true, content: label, color: '#131722', backgroundColor: color, font: { weight: 'bold' }, position: 'start', yAdjust: -18 }
+  };
 }
